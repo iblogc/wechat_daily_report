@@ -72,34 +72,34 @@ WECHAT_API_BASE_URL=http://127.0.0.1:5030
 WECHAT_API_TIMEOUT=30
 
 # 目标群聊（用逗号分隔群名或群ID）
-TARGET_GROUPS=今天HR被鸽了吗🐶,工作群,朋友圈
+TARGET_GROUPS=your_group_name_1,your_group_name_2
 
 # AI服务设置
 AI_SERVICE=gemini  # 可选: openai, gemini, local
-OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_API_KEY=your_openai_api_key
 OPENAI_MODEL=gpt-4o-mini
-GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_API_KEY=your_gemini_api_key
 GEMINI_MODEL=gemini-1.5-flash
 
 # 邮件通知设置 (使用 Resend)
-RESEND_API_KEY=re_123456789_abcdefghijklmnop
-RESEND_FROM_EMAIL=reports@yourdomain.com
-NOTIFICATION_EMAIL=your_email@gmail.com
+RESEND_API_KEY=your_resend_api_key
+RESEND_FROM_EMAIL=noreply@yourdomain.com
+NOTIFICATION_EMAIL=your_email@example.com
 
 # 思源笔记集成
 SIYUAN_ENABLED=true
 SIYUAN_BASE_URL=http://127.0.0.1:6806
-SIYUAN_NOTEBOOK_ID=20250207155248-so9nz4m
-SIYUAN_AUTH_TOKEN=your_siyuan_api_token
-SIYUAN_SAVE_INDIVIDUAL_GROUPS=false
+SIYUAN_NOTEBOOK_ID=your_notebook_id
+SIYUAN_AUTH_TOKEN=your_siyuan_token
+SIYUAN_SAVE_INDIVIDUAL_GROUPS=true
 
 # 报告设置
 MAX_MESSAGES_PER_GROUP=200
 
 # 代理设置
 PROXY_ENABLED=false
-PROXY_HTTP=http://127.0.0.1:1080
-PROXY_HTTPS=http://127.0.0.1:1080
+PROXY_HTTP=http://127.0.0.1:7890
+PROXY_HTTPS=http://127.0.0.1:7890
 ```
 
 ### 4. 测试运行
@@ -152,14 +152,14 @@ crontab -e
 #### 1. OpenAI模式
 ```bash
 AI_SERVICE=openai
-OPENAI_API_KEY=sk-...
+OPENAI_API_KEY=your_openai_api_key
 OPENAI_MODEL=gpt-4o-mini  # 或 gpt-4
 ```
 
 #### 2. Google Gemini模式 (推荐)
 ```bash
 AI_SERVICE=gemini
-GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_API_KEY=your_gemini_api_key
 GEMINI_MODEL=gemini-1.5-flash  # 或 gemini-1.5-pro
 ```
 
@@ -176,14 +176,14 @@ AI_SERVICE=local
 ### 群聊配置
 
 在`TARGET_GROUPS`中配置要监控的群聊，支持：
-- 群聊昵称：`今天HR被鸽了吗🐶`
-- 群聊ID：`24254678513@chatroom`
+- 群聊昵称：`your_group_name`
+- 群聊ID：`your_group_id@chatroom`
 
 ### 思源笔记集成
 
 **功能特点**：
 - 🗂️ **优化目录结构**：日报扁平化存储 (`/微信群聊日报/2024-01-15-日报`)
-- 📁 **群聊分类存储**：按群聊名称分文件夹 (`/微信群聊日报/群聊报告/工作群/2024-01-15.md`)
+- 📁 **群聊分类存储**：按群聊名称分文件夹 (`/微信群聊日报/群聊报告/示例群聊/2024-01-15.md`)
 - 📊 **数据统计表格**：包含各群聊消息数量和处理状态
 - 🏷️ **智能标签**：自动添加日期、类型等标签便于检索
 - 🔗 **文档关联**：支持相关文档的链接引用
@@ -203,9 +203,9 @@ AI_SERVICE=local
 ```bash
 SIYUAN_ENABLED=true
 SIYUAN_BASE_URL=http://127.0.0.1:6806
-SIYUAN_NOTEBOOK_ID=20250207155248-so9nz4m
-SIYUAN_AUTH_TOKEN=p5jtu1bzgwwx7wdk
-SIYUAN_SAVE_INDIVIDUAL_GROUPS=false  # 是否为每个群聊创建单独文档
+SIYUAN_NOTEBOOK_ID=your_notebook_id
+SIYUAN_AUTH_TOKEN=your_siyuan_token
+SIYUAN_SAVE_INDIVIDUAL_GROUPS=true  # 是否为每个群聊创建单独文档
 ```
 
 ### 代理设置配置
@@ -217,8 +217,8 @@ SIYUAN_SAVE_INDIVIDUAL_GROUPS=false  # 是否为每个群聊创建单独文档
 ```bash
 # 启用代理
 PROXY_ENABLED=true
-PROXY_HTTP=http://127.0.0.1:1080
-PROXY_HTTPS=http://127.0.0.1:1080
+PROXY_HTTP=http://127.0.0.1:7890
+PROXY_HTTPS=http://127.0.0.1:7890
 ```
 
 #### 支持的代理类型
@@ -246,8 +246,8 @@ PROXY_HTTP=socks5://127.0.0.1:1080
 PROXY_HTTPS=socks5://127.0.0.1:1080
 
 # 带认证的代理
-PROXY_HTTP=http://username:password@proxy.example.com:8080
-PROXY_HTTPS=http://username:password@proxy.example.com:8080
+PROXY_HTTP=http://user:pass@host:port
+PROXY_HTTPS=http://user:pass@host:port
 ```
 
 #### 工作原理
@@ -270,9 +270,9 @@ PROXY_HTTPS=http://username:password@proxy.example.com:8080
 
 ```bash
 # Resend 配置示例
-RESEND_API_KEY=re_123456789_abcdefghijklmnop
-RESEND_FROM_EMAIL=reports@yourdomain.com
-NOTIFICATION_EMAIL=your_email@gmail.com
+RESEND_API_KEY=re_your_api_key
+RESEND_FROM_EMAIL=noreply@yourdomain.com
+NOTIFICATION_EMAIL=your_email@example.com
 ```
 
 **Resend 设置步骤**：
@@ -317,7 +317,7 @@ NOTIFICATION_EMAIL=your_email@gmail.com
 
 ```markdown
 ## 📊 群聊概况
-- **群聊名称**: 产品讨论群
+- **群聊名称**: 示例讨论群
 - **活跃成员**: 12人
 - **消息总数**: 156条
 - **时间跨度**: 2024-01-15 09:00 ~ 18:30
@@ -327,7 +327,7 @@ NOTIFICATION_EMAIL=your_email@gmail.com
 1. **新版本功能规划**: 
    - 核心内容: 讨论V2.0版本的核心功能点
    - 主要观点: 优先级应该放在用户体验优化上
-   - 参与讨论: 张三、李四、王五
+   - 参与讨论: 用户A、用户B、用户C
 
 ## ❓ FAQ 常见问题
 
@@ -335,8 +335,8 @@ NOTIFICATION_EMAIL=your_email@gmail.com
 **A1**: 预计下个月底完成开发，下下个月初发布
 
 ## 🎯 待跟进事项
-- [ ] 确认UI设计方案 (张三负责)
-- [ ] 制定测试计划 (李四负责)
+- [ ] 确认UI设计方案 (用户A负责)
+- [ ] 制定测试计划 (用户B负责)
 ```
 
 ## 🔧 API接口说明

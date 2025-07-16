@@ -241,7 +241,7 @@ def main():
     
     parser = argparse.ArgumentParser(description='WeChat Daily Report Generator')
     parser.add_argument('--date', type=str, help='Report date (YYYY-MM-DD), default: yesterday')
-    parser.add_argument('--config', type=str, default='.env', help='Config file path')
+    parser.add_argument('--config', type=str, default='.env.prod', help='Config file path')
     parser.add_argument('--test', action='store_true', help='Test API connection')
     
     args = parser.parse_args()
