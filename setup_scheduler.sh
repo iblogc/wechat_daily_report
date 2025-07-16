@@ -26,7 +26,7 @@ setup_cron() {
     
     echo "✅ Cron job added successfully!"
     echo "Command: $cron_entry"
-    echo "💡 Proxy settings can be configured in .env file (PROXY_ENABLED, PROXY_HTTP, PROXY_HTTPS)"
+    echo "💡 Proxy settings can be configured in .env.prod file (PROXY_ENABLED, PROXY_HTTP, PROXY_HTTPS)"
 }
 
 # Create systemd timer (alternative to cron)
@@ -75,7 +75,7 @@ EOF
     
     echo "✅ Systemd timer created and started!"
     echo "Check status with: systemctl status $service_name.timer"
-    echo "💡 Proxy settings can be configured in .env file (PROXY_ENABLED, PROXY_HTTP, PROXY_HTTPS)"
+    echo "💡 Proxy settings can be configured in .env.prod file (PROXY_ENABLED, PROXY_HTTP, PROXY_HTTPS)"
 }
 
 # Show menu
@@ -108,7 +108,7 @@ show_manual_instructions() {
     echo "   $PYTHON_PATH $MAIN_SCRIPT"
     echo ""
     echo "4. Proxy Configuration:"
-    echo "   Edit .env file and set:"
+    echo "   Edit .env.prod file and set:"
     echo "   PROXY_ENABLED=true"
     echo "   PROXY_HTTP=http://127.0.0.1:1080"
     echo "   PROXY_HTTPS=http://127.0.0.1:1080"
@@ -121,10 +121,10 @@ main() {
     mkdir -p "$SCRIPT_DIR/logs"
     
     # Check if config exists
-    if [ ! -f "$SCRIPT_DIR/.env" ]; then
-        echo "⚠️  Configuration file .env not found!"
-        echo "Please copy .env.example to .env and configure it first."
-        echo "cp .env.example .env"
+    if [ ! -f "$SCRIPT_DIR/.env.prod" ]; then
+        echo "⚠️  Configuration file .env.prod not found!"
+        echo "Please copy .env.example to .env.prod and configure it first."
+        echo "cp .env.example .env.prod"
         exit 1
     fi
     
