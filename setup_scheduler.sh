@@ -18,24 +18,15 @@ setup_cron() {
     
     echo "Setting up cron job to run at $cron_time daily..."
     
-    # Ask for proxy settings
-    read -p "Do you want to use a proxy for AI services? (y/n): " use_proxy
-    local proxy_env=""
-    if [[ "$use_proxy" =~ ^[Yy]$ ]]; then
-        read -p "Enter proxy URL (e.g., http://127.0.0.1:1080): " proxy_url
-        if [[ -n "$proxy_url" ]]; then
-            proxy_env="export HTTP_PROXY=$proxy_url; export HTTPS_PROXY=$proxy_url; "
-        fi
-    fi
-    
-    # Create cron entry with optional proxy
-    local cron_entry="$minute $hour * * * cd $SCRIPT_DIR && ${proxy_env}$PYTHON_PATH $MAIN_SCRIPT >> $SCRIPT_DIR/logs/cron.log 2>&1"
+    # Create cron entry
+    local cron_entry="$minute $hour * * * cd $SCRIPT_DIR && $PYTHON_PATH $MAIN_SCRIPT >> $SCRIPT_DIR/logs/cron.log 2>&1"
     
     # Add to crontab
     (crontab -l 2>/dev/null; echo "$cron_entry") | crontab -
     
     echo "✅ Cron job added successfully!"
     echo "Command: $cron_entry"
+    echo "💡 Proxy settings can be configured in .env file (PROXY_ENABLED, PROXY_HTTP, PROXY_HTTPS)"
 }
 
 # Create systemd timer (alternative to cron)
@@ -45,18 +36,7 @@ setup_systemd_timer() {
     
     echo "Setting up systemd timer to run at $time daily..."
     
-    # Ask for proxy settings
-    read -p "Do you want to use a proxy for AI services? (y/n): " use_proxy
-    local proxy_env=""
-    if [[ "$use_proxy" =~ ^[Yy]$ ]]; then
-        read -p "Enter proxy URL (e.g., http://127.0.0.1:1080): " proxy_url
-        if [[ -n "$proxy_url" ]]; then
-            proxy_env="Environment=HTTP_PROXY=$proxy_url
-Environment=HTTPS_PROXY=$proxy_url"
-        fi
-    fi
-    
-    # Create service file with optional proxy
+    # Create service file
     sudo tee /etc/systemd/system/$service_name.service > /dev/null <<EOF
 [Unit]
 Description=WeChat Daily Report Generator
@@ -66,7 +46,6 @@ After=network.target
 Type=oneshot
 User=$USER
 WorkingDirectory=$SCRIPT_DIR
-${proxy_env}
 ExecStart=$PYTHON_PATH $MAIN_SCRIPT
 StandardOutput=append:$SCRIPT_DIR/logs/systemd.log
 StandardError=append:$SCRIPT_DIR/logs/systemd.log
@@ -96,6 +75,7 @@ EOF
     
     echo "✅ Systemd timer created and started!"
     echo "Check status with: systemctl status $service_name.timer"
+    echo "💡 Proxy settings can be configured in .env file (PROXY_ENABLED, PROXY_HTTP, PROXY_HTTPS)"
 }
 
 # Show menu
@@ -118,7 +98,6 @@ show_manual_instructions() {
     echo "1. Cron Job Setup:"
     echo "   Run: crontab -e"
     echo "   Add: 0 8 * * * cd $SCRIPT_DIR && $PYTHON_PATH $MAIN_SCRIPT"
-    echo "   With proxy: 0 8 * * * cd $SCRIPT_DIR && export HTTP_PROXY=http://127.0.0.1:1080; export HTTPS_PROXY=http://127.0.0.1:1080; $PYTHON_PATH $MAIN_SCRIPT"
     echo ""
     echo "2. Test the script:"
     echo "   cd $SCRIPT_DIR"
@@ -128,11 +107,11 @@ show_manual_instructions() {
     echo "   cd $SCRIPT_DIR"
     echo "   $PYTHON_PATH $MAIN_SCRIPT"
     echo ""
-    echo "4. Run with proxy manually:"
-    echo "   cd $SCRIPT_DIR"
-    echo "   export HTTP_PROXY=http://127.0.0.1:1080"
-    echo "   export HTTPS_PROXY=http://127.0.0.1:1080"
-    echo "   $PYTHON_PATH $MAIN_SCRIPT"
+    echo "4. Proxy Configuration:"
+    echo "   Edit .env file and set:"
+    echo "   PROXY_ENABLED=true"
+    echo "   PROXY_HTTP=http://127.0.0.1:1080"
+    echo "   PROXY_HTTPS=http://127.0.0.1:1080"
     echo ""
 }
 

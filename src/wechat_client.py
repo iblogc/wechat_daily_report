@@ -53,7 +53,7 @@ class WeChatAPIClient:
         }
         
         if time_range:
-            params["time"] = time_range
+            params["time"] = time_range.replace(' ', '/')
             
         try:
             response = self.session.get(url, params=params, timeout=self.timeout)
@@ -67,6 +67,39 @@ class WeChatAPIClient:
         """获取昨天的聊天记录"""
         yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
         return self.get_chat_logs(talker, time_range=yesterday, limit=limit)
+    
+    def get_daily_report_chats(self, talker: str, report_date: str = None, limit: int = 200) -> List[Dict]:
+        """
+        获取日报时间范围的聊天记录（当天5点到第二天5点）
+        
+        Args:
+            talker: 群聊ID或群名
+            report_date: 报告日期，格式 YYYY-MM-DD，默认为昨天
+            limit: 返回记录数量
+        """
+        if not report_date:
+            report_date = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        # 解析报告日期
+        report_dt = datetime.strptime(report_date, '%Y-%m-%d')
+        
+        # 计算时间范围：当一天5点到第二天5点
+        start_time = report_dt.replace(hour=5, minute=0, second=0, microsecond=0)
+        end_time = (report_dt + timedelta(days=1)).replace(hour=5, minute=0, second=0, microsecond=0)
+        
+        # 格式化时间范围
+        start_date = start_time.strftime('%Y-%m-%d %H:%M')
+        end_date = end_time.strftime('%Y-%m-%d %H:%M')
+        
+        self.logger.info(f"Fetching chats for {talker} from {start_time} to {end_time}")
+        
+        # 如果开始和结束是同一天，使用单日格式
+        if start_date == end_date:
+            time_range = start_date
+        else:
+            time_range = f"{start_date}~{end_date}"
+        
+        return self.get_chat_logs(talker, time_range=time_range, limit=limit)
     
     def get_chat_logs_by_date_range(self, talker: str, start_date: str, 
                                    end_date: str, limit: int = 200) -> List[Dict]:

@@ -14,6 +14,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 from src.wechat_client import WeChatAPIClient
 from src.summarizer import SummarizerFactory
 from src.report_generator import ReportGenerator, NotificationService
+from src.proxy_manager import ProxyManager
 
 
 class WeChatDailyReporter:
@@ -30,6 +31,13 @@ class WeChatDailyReporter:
             base_url=self.config['api_base_url'],
             timeout=self.config['api_timeout']
         )
+        
+        # 创建代理管理器
+        self.proxy_manager = ProxyManager.from_config({
+            'proxy_enabled': self.config['proxy_enabled'],
+            'proxy_http': self.config['proxy_http'],
+            'proxy_https': self.config['proxy_https']
+        })
         
         # 准备AI服务配置
         api_key = None
@@ -58,12 +66,13 @@ class WeChatDailyReporter:
         self.summarizer = SummarizerFactory.create_summarizer(
             service_type=self.config['ai_service'],
             api_key=api_key,
-            model=model
+            model=model,
+            proxy_manager=self.proxy_manager
         )
         
         self.report_generator = ReportGenerator()
         self.notification_service = NotificationService(
-            smtp_config=self.config.get('smtp_config'),
+            resend_config=self.config.get('resend_config'),
             siyuan_config=self.config.get('siyuan_config')
         )
         
@@ -98,12 +107,13 @@ class WeChatDailyReporter:
             'gemini_model': os.getenv('GEMINI_MODEL'),
             'max_messages_per_group': int(os.getenv('MAX_MESSAGES_PER_GROUP', '200')),
             'notification_email': os.getenv('NOTIFICATION_EMAIL'),
-            'smtp_config': {
-                'server': os.getenv('SMTP_SERVER'),
-                'port': int(os.getenv('SMTP_PORT', '587')),
-                'user': os.getenv('SMTP_USER'),
-                'password': os.getenv('SMTP_PASSWORD')
-            } if os.getenv('SMTP_SERVER') else None,
+            'proxy_enabled': os.getenv('PROXY_ENABLED', 'false').lower() == 'true',
+            'proxy_http': os.getenv('PROXY_HTTP'),
+            'proxy_https': os.getenv('PROXY_HTTPS'),
+            'resend_config': {
+                'api_key': os.getenv('RESEND_API_KEY'),
+                'from_email': os.getenv('RESEND_FROM_EMAIL', 'onboarding@resend.dev')
+            } if os.getenv('RESEND_API_KEY') else None,
             'siyuan_config': {
                 'enabled': os.getenv('SIYUAN_ENABLED', 'false').lower() == 'true',
                 'base_url': os.getenv('SIYUAN_BASE_URL', 'http://127.0.0.1:6806'),
@@ -143,10 +153,10 @@ class WeChatDailyReporter:
             try:
                 self.logger.info(f"Processing group: {group_name}")
                 
-                # 获取聊天记录
-                chat_logs = self.api_client.get_chat_logs(
+                # 获取聊天记录（前一天5点到当天5点）
+                chat_logs = self.api_client.get_daily_report_chats(
                     talker=group_name,
-                    time_range=report_date,
+                    report_date=report_date,
                     limit=self.config['max_messages_per_group']
                 )
                 
@@ -208,7 +218,7 @@ class WeChatDailyReporter:
             )
             
             # 邮件通知
-            if self.config['notification_email'] and self.config['smtp_config']:
+            if self.config['notification_email'] and self.config['resend_config']:
                 self.notification_service.send_report(
                     report_content, report_date, method="email",
                     recipient_email=self.config['notification_email']
@@ -240,26 +250,58 @@ def main():
         reporter = WeChatDailyReporter(args.config)
         
         if args.test:
-            # 测试API连接
+            print("🔍 Running connection tests...\n")
+            
+            # 测试微信API连接
+            print("1. Testing WeChat API connection...")
             if reporter.api_client.health_check():
-                print("✅ API connection successful")
+                print("✅ WeChat API connection successful")
                 
                 # 测试获取群聊列表
                 chat_rooms = reporter.api_client.get_chat_rooms(limit=5)
                 print(f"📱 Found {len(chat_rooms)} chat rooms")
                 for room in chat_rooms[:3]:
                     print(f"  - {room.get('nickName', room.get('name'))}")
-                
-                # 测试思源笔记连接
-                if reporter.config['siyuan_config']['enabled']:
-                    if reporter.notification_service.siyuan_client.test_connection():
-                        print("✅ SiYuan Notes connection successful")
-                    else:
-                        print("❌ SiYuan Notes connection failed")
-                
             else:
-                print("❌ API connection failed")
+                print("❌ WeChat API connection failed")
                 return 1
+            
+            print()
+            
+            # 测试AI服务连接
+            print(f"2. Testing AI service ({reporter.config['ai_service']})...")
+            if reporter.summarizer.test_connection():
+                print(f"✅ {reporter.config['ai_service'].upper()} API connection successful")
+                if reporter.config['proxy_enabled']:
+                    print(f"🌐 Using proxy: {reporter.config['proxy_http']}")
+            else:
+                print(f"❌ {reporter.config['ai_service'].upper()} API connection failed")
+                if reporter.config['ai_service'] != 'local':
+                    return 1
+            
+            print()
+            
+            # 测试思源笔记连接
+            if reporter.config['siyuan_config']['enabled']:
+                print("3. Testing SiYuan Notes connection...")
+                if reporter.notification_service.siyuan_client.test_connection():
+                    print("✅ SiYuan Notes connection successful")
+                else:
+                    print("❌ SiYuan Notes connection failed")
+            else:
+                print("3. SiYuan Notes integration disabled")
+            
+            print()
+            
+            # 测试邮件配置
+            if reporter.config['resend_config'] and reporter.config['notification_email']:
+                print("4. Resend email notification configured ✅")
+                print(f"   From: {reporter.config['resend_config']['from_email']}")
+                print(f"   To: {reporter.config['notification_email']}")
+            else:
+                print("4. Resend email notification not configured")
+            
+            print("\n🎉 All tests completed!")
         else:
             # 生成报告
             report_file = reporter.run_daily_report(args.date)

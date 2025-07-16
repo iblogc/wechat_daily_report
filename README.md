@@ -7,10 +7,14 @@
 - 🤖 **智能总结**: 支持OpenAI GPT、Google Gemini等AI服务对聊天记录进行智能分析和总结
 - 📱 **多群监控**: 可同时监控多个微信群聊
 - ⏰ **自动化运行**: 支持cron和systemd定时任务，每天自动生成报告
-- 📧 **多种通知方式**: 支持邮件、控制台输出、思源笔记等多种报告发送方式
+- 📧 **专业邮件服务**: 使用Resend服务发送HTML格式的精美邮件报告
 - 🔧 **灵活配置**: 支持本地简单总结和AI智能总结两种模式
 - 📊 **结构化报告**: 生成包含群聊活跃度、核心话题、FAQ、待跟进事项等的结构化报告
 - 📓 **思源笔记集成**: 自动保存报告到思源笔记，支持结构化存储和标签管理
+- 🌐 **智能代理管理**: 支持代理设置，在AI请求时自动启用，完成后自动清理
+- 🔍 **全面连接测试**: 一键测试微信API、AI服务、思源笔记、邮件服务等所有连接状态
+- ⏰ **优化时间范围**: 报告覆盖前一天5点到当天5点，更符合实际聊天习惯
+- 🎨 **美观邮件**: 自动将Markdown报告转换为带样式的HTML邮件
 
 ## 📋 项目结构
 
@@ -24,7 +28,8 @@ wechat_daily_report/
 │   ├── wechat_client.py   # 微信API客户端
 │   ├── summarizer.py      # AI总结服务
 │   ├── report_generator.py # 报告生成器
-│   └── siyuan_client.py   # 思源笔记客户端
+│   ├── siyuan_client.py   # 思源笔记客户端
+│   └── proxy_manager.py   # 代理管理器
 ├── templates/             # 报告模板
 ├── reports/              # 生成的报告文件
 └── logs/                 # 日志文件
@@ -76,11 +81,9 @@ OPENAI_MODEL=gpt-4o-mini
 GEMINI_API_KEY=your_gemini_api_key_here
 GEMINI_MODEL=gemini-1.5-flash
 
-# 邮件通知设置
-SMTP_SERVER=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your_email@gmail.com
-SMTP_PASSWORD=your_app_password
+# 邮件通知设置 (使用 Resend)
+RESEND_API_KEY=re_123456789_abcdefghijklmnop
+RESEND_FROM_EMAIL=reports@yourdomain.com
 NOTIFICATION_EMAIL=your_email@gmail.com
 
 # 思源笔记集成
@@ -92,12 +95,17 @@ SIYUAN_SAVE_INDIVIDUAL_GROUPS=false
 
 # 报告设置
 MAX_MESSAGES_PER_GROUP=200
+
+# 代理设置
+PROXY_ENABLED=false
+PROXY_HTTP=http://127.0.0.1:1080
+PROXY_HTTPS=http://127.0.0.1:1080
 ```
 
 ### 4. 测试运行
 
 ```bash
-# 测试API连接和配置
+# 🔍 全面连接测试（推荐首次运行）
 python main.py --test
 
 # 手动生成报告
@@ -106,6 +114,18 @@ python main.py
 # 生成指定日期的报告
 python main.py --date 2023-12-01
 ```
+
+**连接测试功能**：
+- ✅ **微信API连接**: 测试chatlog服务可用性，显示可用群聊列表
+- 🤖 **AI服务测试**: 使用models API检测AI服务连接状态和模型可用性
+- 📓 **思源笔记连接**: 验证思源笔记API连接和权限
+- 📧 **邮件配置检查**: 确认SMTP配置是否完整
+- 🌐 **代理状态显示**: 显示代理配置和使用状态
+
+**时间范围说明**：
+- 📅 **报告覆盖时间**: 前一天5:00 到当天5:00（24小时）
+- 🌙 **适应聊天习惯**: 覆盖深夜到凌晨的完整聊天周期
+- 📊 **示例**: 2025-07-15的报告覆盖 2025-07-14 05:00 ~ 2025-07-15 05:00
 
 ### 5. 设置自动化定时任务
 
@@ -188,22 +208,85 @@ SIYUAN_AUTH_TOKEN=p5jtu1bzgwwx7wdk
 SIYUAN_SAVE_INDIVIDUAL_GROUPS=false  # 是否为每个群聊创建单独文档
 ```
 
-### 邮件通知配置
+### 代理设置配置
 
-支持Gmail等SMTP服务：
+**🌐 智能代理管理**：程序会在AI请求前自动设置代理，请求完成后自动清理代理环境变量，确保不影响其他网络请求。
+
+#### 配置方法
 
 ```bash
-# Gmail配置示例
-SMTP_SERVER=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your_email@gmail.com
-SMTP_PASSWORD=your_app_password  # 使用应用专用密码
+# 启用代理
+PROXY_ENABLED=true
+PROXY_HTTP=http://127.0.0.1:1080
+PROXY_HTTPS=http://127.0.0.1:1080
 ```
 
-**Gmail设置步骤**：
-1. 启用两步验证
-2. 生成应用专用密码
-3. 使用应用密码而非账户密码
+#### 支持的代理类型
+
+- **HTTP代理**: 适用于OpenAI API请求
+- **HTTPS代理**: 适用于Gemini API请求
+- **SOCKS代理**: 支持socks5://格式
+
+#### 使用场景
+
+- 🚀 **海外AI服务访问**: 当需要访问OpenAI、Gemini等海外AI服务时
+- 🔒 **企业网络环境**: 在有网络限制的企业环境中使用
+- ⚡ **网络优化**: 通过代理服务器优化网络连接速度
+
+#### 代理配置示例
+
+```bash
+# 常见代理配置
+PROXY_ENABLED=true
+PROXY_HTTP=http://127.0.0.1:7890    # Clash代理
+PROXY_HTTPS=http://127.0.0.1:7890
+
+# 或者使用SOCKS5代理
+PROXY_HTTP=socks5://127.0.0.1:1080
+PROXY_HTTPS=socks5://127.0.0.1:1080
+
+# 带认证的代理
+PROXY_HTTP=http://username:password@proxy.example.com:8080
+PROXY_HTTPS=http://username:password@proxy.example.com:8080
+```
+
+#### 工作原理
+
+1. **自动管理**: 程序启动时读取代理配置
+2. **按需设置**: 仅在AI请求时临时设置代理环境变量
+3. **自动清理**: AI请求完成后立即恢复原始环境变量
+4. **不影响其他**: 不会影响微信API、邮件发送等其他网络请求
+
+#### 注意事项
+
+- ⚠️ **仅影响AI请求**: 代理设置只对OpenAI和Gemini API生效
+- 🔧 **环境变量管理**: 使用上下文管理器确保环境变量正确恢复
+- 📝 **日志记录**: 代理的启用和关闭会记录在日志中
+- 🚫 **定时任务简化**: 移除了定时任务脚本中的代理设置，统一通过配置文件管理
+
+### 邮件通知配置
+
+使用 **Resend** 服务发送邮件，更稳定可靠：
+
+```bash
+# Resend 配置示例
+RESEND_API_KEY=re_123456789_abcdefghijklmnop
+RESEND_FROM_EMAIL=reports@yourdomain.com
+NOTIFICATION_EMAIL=your_email@gmail.com
+```
+
+**Resend 设置步骤**：
+1. 访问 [Resend.com](https://resend.com) 注册账户
+2. 在控制台创建 API Key
+3. 验证发件人域名或使用测试域名
+4. 配置环境变量
+
+**Resend 优势**：
+- 🚀 **高送达率**: 专业的邮件发送服务
+- 📊 **详细统计**: 提供邮件发送状态和统计
+- 🔒 **安全可靠**: 无需暴露个人邮箱密码
+- 💰 **免费额度**: 每月3000封免费邮件
+- 🎨 **HTML支持**: 自动将Markdown转换为美观的HTML邮件
 
 ### 报告模板自定义
 

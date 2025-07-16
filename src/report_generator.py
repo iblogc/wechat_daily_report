@@ -116,8 +116,8 @@ class ReportGenerator:
 class NotificationService:
     """通知服务"""
     
-    def __init__(self, smtp_config: Dict = None, siyuan_config: Dict = None):
-        self.smtp_config = smtp_config or {}
+    def __init__(self, resend_config: Dict = None, siyuan_config: Dict = None):
+        self.resend_config = resend_config or {}
         self.siyuan_config = siyuan_config or {}
         self.logger = logging.getLogger(__name__)
         
@@ -135,7 +135,7 @@ class NotificationService:
     def send_email_report(self, report_content: str, report_date: str, 
                          recipient_email: str) -> bool:
         """
-        发送邮件报告
+        使用 Resend 发送邮件报告
         
         Args:
             report_content: 报告内容
@@ -145,39 +145,144 @@ class NotificationService:
         Returns:
             bool: 发送是否成功
         """
-        import smtplib
-        from email.mime.text import MIMEText
-        from email.mime.multipart import MIMEMultipart
-        from email.header import Header
+        import os
+        import resend
         
         try:
-            # 创建邮件
-            msg = MIMEMultipart()
-            msg['From'] = Header(self.smtp_config.get('user', ''), 'utf-8')
-            msg['To'] = Header(recipient_email, 'utf-8')
-            msg['Subject'] = Header(f'微信群聊每日报告 - {report_date}', 'utf-8')
+            # 设置 Resend API 密钥
+            resend_api_key = os.environ.get("RESEND_API_KEY")
+            if not resend_api_key:
+                self.logger.error("RESEND_API_KEY not found in environment variables")
+                return False
             
-            # 添加邮件正文
-            text_content = MIMEText(report_content, 'plain', 'utf-8')
-            msg.attach(text_content)
+            resend.api_key = resend_api_key
+            
+            # 获取发件人邮箱
+            from_email = os.environ.get("RESEND_FROM_EMAIL", "onboarding@resend.dev")
+            
+            # 将 Markdown 内容转换为 HTML
+            html_content = self._markdown_to_html(report_content)
+            
+            # 构建邮件参数
+            params: resend.Emails.SendParams = {
+                "from": f"微信日报 <{from_email}>",
+                "to": [recipient_email],
+                "subject": f"微信群聊每日报告 - {report_date}",
+                "html": html_content,
+                "text": report_content  # 同时提供纯文本版本
+            }
             
             # 发送邮件
-            server = smtplib.SMTP(self.smtp_config.get('server'), 
-                                self.smtp_config.get('port', 587))
-            server.starttls()
-            server.login(self.smtp_config.get('user'), 
-                        self.smtp_config.get('password'))
+            email = resend.Emails.send(params)
             
-            text = msg.as_string()
-            server.sendmail(self.smtp_config.get('user'), recipient_email, text)
-            server.quit()
-            
-            self.logger.info(f"Email report sent successfully to {recipient_email}")
+            self.logger.info(f"Email report sent successfully to {recipient_email} via Resend, ID: {email.get('id', 'unknown')}")
             return True
             
         except Exception as e:
-            self.logger.error(f"Failed to send email: {e}")
+            self.logger.error(f"Failed to send email via Resend: {e}")
             return False
+    
+    def _markdown_to_html(self, markdown_content: str) -> str:
+        """
+        将 Markdown 内容转换为 HTML
+        
+        Args:
+            markdown_content: Markdown 格式的内容
+            
+        Returns:
+            str: HTML 格式的内容
+        """
+        try:
+            import markdown
+            # 使用 markdown 库转换
+            html = markdown.markdown(markdown_content, extensions=['nl2br', 'tables', 'fenced_code', 'pymdownx.tasklist'])
+            
+            # 添加基本的 CSS 样式
+            styled_html = f"""
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <style>
+                    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }}
+                    h1, h2, h3 {{ color: #2c3e50; }}
+                    h1 {{ border-bottom: 2px solid #3498db; padding-bottom: 10px; }}
+                    h2 {{ border-bottom: 1px solid #ecf0f1; padding-bottom: 5px; }}
+                    code {{ background-color: #f8f9fa; padding: 2px 4px; border-radius: 3px; font-family: 'Monaco', 'Consolas', monospace; }}
+                    pre {{ background-color: #f8f9fa; padding: 15px; border-radius: 5px; overflow-x: auto; }}
+                    blockquote {{ border-left: 4px solid #3498db; margin: 0; padding-left: 20px; color: #7f8c8d; }}
+                    table {{ border-collapse: collapse; width: 100%; margin: 15px 0; }}
+                    th, td {{ border: 1px solid #ddd; padding: 12px; text-align: left; }}
+                    th {{ background-color: #f2f2f2; font-weight: bold; }}
+                    ul, ol {{ padding-left: 20px; }}
+                    li {{ margin: 5px 0; }}
+                    .emoji {{ font-size: 1.2em; }}
+                    hr {{ border: none; border-top: 1px solid #ecf0f1; margin: 20px 0; }}
+                </style>
+            </head>
+            <body>
+                {html}
+            </body>
+            </html>
+            """
+            return styled_html
+            
+        except ImportError:
+            # 如果没有 markdown 库，使用简单的 HTML 转换
+            self.logger.warning("markdown library not found, using simple HTML conversion")
+            return self._simple_markdown_to_html(markdown_content)
+    
+    def _simple_markdown_to_html(self, markdown_content: str) -> str:
+        """
+        简单的 Markdown 到 HTML 转换（不依赖外部库）
+        
+        Args:
+            markdown_content: Markdown 格式的内容
+            
+        Returns:
+            str: HTML 格式的内容
+        """
+        import re
+        
+        html = markdown_content
+        
+        # 转换标题
+        html = re.sub(r'^### (.*?)$', r'<h3>\1</h3>', html, flags=re.MULTILINE)
+        html = re.sub(r'^## (.*?)$', r'<h2>\1</h2>', html, flags=re.MULTILINE)
+        html = re.sub(r'^# (.*?)$', r'<h1>\1</h1>', html, flags=re.MULTILINE)
+        
+        # 转换粗体
+        html = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', html)
+        
+        # 转换斜体
+        html = re.sub(r'\*(.*?)\*', r'<em>\1</em>', html)
+        
+        # 转换代码块
+        html = re.sub(r'`(.*?)`', r'<code>\1</code>', html)
+        
+        # 转换换行
+        html = html.replace('\n', '<br>\n')
+        
+        # 添加基本样式
+        styled_html = f"""
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }}
+                h1, h2, h3 {{ color: #2c3e50; }}
+                h1 {{ border-bottom: 2px solid #3498db; padding-bottom: 10px; }}
+                h2 {{ border-bottom: 1px solid #ecf0f1; padding-bottom: 5px; }}
+                code {{ background-color: #f8f9fa; padding: 2px 4px; border-radius: 3px; font-family: 'Monaco', 'Consolas', monospace; }}
+                strong {{ color: #2c3e50; }}
+                .emoji {{ font-size: 1.2em; }}
+            </style>
+        </head>
+        <body>
+            {html}
+        </body>
+        </html>
+        """
+        return styled_html
     
     def save_to_siyuan(self, report_content: str, report_date: str, 
                       group_summaries: List[Dict] = None) -> bool:
