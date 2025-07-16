@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "chatlog-api": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "apifox-mcp-server@latest",
+        "--project=6650192"
+      ],
+      "env": {
+        "APIFOX_ACCESS_TOKEN": "APS-6RJzC5NsM8SCUQYBiailRx77othc67DO"
+      }
+    }
+  }
+}
