@@ -36,6 +36,7 @@ class BaseSummarizer(ABC):
             content = log.get('content', '')
             msg_type = log.get('type', 0)
             contents = log.get('contents', {})
+            is_self = log.get('isSelf', False)
             
             # 精简时间格式 (保留月日时分)
             if time_str:
@@ -59,14 +60,18 @@ class BaseSummarizer(ABC):
                 if sub_type == 51:  # 链接分享
                     title = contents.get('title', '')
                     url = contents.get('url', '')
-                    formatted_content = f"[分享] {title}" + (f" ({url})" if url else "")
+                    formatted_content = f"[分享] [{title}]" + (f"({url})" if url else "")
                 elif sub_type == 57 and contents.get('refer'):  # 引用消息
                     refer = contents['refer']
                     refer_sender = refer.get('senderName', '未知用户')
                     refer_content = refer.get('content', '')
+                    refer_is_self = refer.get('isSelf', False)
+                    
+                    # 为引用消息的发送者也添加特殊标记
+                    refer_sender_display = f"{refer_sender} [我]" if refer_is_self else refer_sender
                     
                     # 处理引用消息，保留完整内容
-                    formatted_content = f"{content}\n  └ 回复 {refer_sender}: {refer_content}"
+                    formatted_content = f"{content}\n  └ 回复 {refer_sender_display}: {refer_content}"
                 else:
                     formatted_content = content or "[其他消息]"
             else:
@@ -79,8 +84,10 @@ class BaseSummarizer(ABC):
             # 跳过空消息
             if not formatted_content.strip():
                 continue
-                
-            messages.append(f"[{time_str}] {sender}: {formatted_content}")
+            
+            # 为自己发送的消息添加特殊标记
+            sender_display = f"{sender} [我]" if is_self else sender
+            messages.append(f"[{time_str}] {sender_display}: {formatted_content}")
         
         return "\n".join(messages)
     
@@ -195,7 +202,24 @@ class OpenAISummarizer(BaseSummarizer):
                     ],
                     temperature=0.3
                 )
-            return response.choices[0].message.content.strip()
+            
+            # 获取AI生成的总结
+            ai_summary = response.choices[0].message.content.strip()
+            
+            # 添加折叠的完整聊天记录
+            collapsible_section = f"""
+
+<details>
+<summary>📋 完整聊天记录</summary>
+
+```
+{formatted_messages}
+```
+
+</details>"""
+            
+            return ai_summary + collapsible_section
+            
         except Exception as e:
             self.logger.error(f"OpenAI API error: {e}")
             raise RuntimeError(f"OpenAI API调用失败: {str(e)}")
@@ -236,6 +260,9 @@ class LocalSummarizer(BaseSummarizer):
                     if word in content:
                         keywords[word] = keywords.get(word, 0) + 1
         
+        # 格式化聊天记录
+        formatted_messages = self._format_messages(chat_logs)
+        
         # 生成简单总结
         summary = f"""## 群聊总结：{group_name}
 
@@ -251,7 +278,20 @@ class LocalSummarizer(BaseSummarizer):
 
 *注：这是简单统计总结，如需详细分析请配置AI服务*
 """
-        return summary
+        
+        # 添加折叠的完整聊天记录
+        collapsible_section = f"""
+
+<details>
+<summary>📋 完整聊天记录</summary>
+
+```
+{formatted_messages}
+```
+
+</details>"""
+        
+        return summary + collapsible_section
 
 
 class GeminiSummarizer(BaseSummarizer):
@@ -306,7 +346,24 @@ class GeminiSummarizer(BaseSummarizer):
                         temperature=0.3
                     )
                 )
-            return response.text.strip()
+            
+            # 获取AI生成的总结
+            ai_summary = response.text.strip()
+            
+            # 添加折叠的完整聊天记录
+            collapsible_section = f"""
+
+<details>
+<summary>📋 完整聊天记录</summary>
+
+```
+{formatted_messages}
+```
+
+</details>"""
+            
+            return ai_summary + collapsible_section
+            
         except Exception as e:
             self.logger.error(f"Gemini API error: {e}")
             self.logger.exception(e)
