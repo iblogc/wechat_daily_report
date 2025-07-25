@@ -76,4 +76,5 @@ config.yml
 # Add any other files or directories you want to ignore here
 reports/
 logs/
+exports/
 

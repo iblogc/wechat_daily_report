@@ -156,29 +156,40 @@ class BaseSummarizer(ABC):
 class OpenAISummarizer(BaseSummarizer):
     """OpenAI总结器"""
     
-    def __init__(self, api_key: str, model: str = "gpt-4o-mini", proxy_manager: ProxyManager = None):
+    def __init__(self, api_keys: List[str], model: str = "gpt-4o-mini", proxy_manager: ProxyManager = None):
         super().__init__()
-        self.client = OpenAI(api_key=api_key)
+        self.api_keys = api_keys if isinstance(api_keys, list) else [api_keys]
+        self.current_key_index = 0
+        self.clients = [OpenAI(api_key=key) for key in self.api_keys]
         self.model = model
         self.proxy_manager = proxy_manager or ProxyManager()
     
+    def _get_next_client(self):
+        """获取下一个可用的客户端"""
+        client = self.clients[self.current_key_index]
+        self.current_key_index = (self.current_key_index + 1) % len(self.clients)
+        return client
+    
     def test_connection(self) -> bool:
         """测试OpenAI API连接"""
-        try:
-            with self.proxy_manager.proxy_context():
-                # 使用models API来测试连接
-                models = self.client.models.list()
-                # 检查指定的模型是否可用
-                available_models = [model.id for model in models.data]
-                if self.model in available_models:
-                    self.logger.info(f"OpenAI API connection successful, model {self.model} is available")
-                    return True
-                else:
-                    self.logger.warning(f"OpenAI API connected but model {self.model} not found in available models")
-                    return False
-        except Exception as e:
-            self.logger.error(f"OpenAI API connection failed: {e}")
-            return False
+        for i, client in enumerate(self.clients):
+            try:
+                with self.proxy_manager.proxy_context():
+                    # 使用models API来测试连接
+                    models = client.models.list()
+                    # 检查指定的模型是否可用
+                    available_models = [model.id for model in models.data]
+                    if self.model in available_models:
+                        self.logger.info(f"OpenAI API connection successful with key {i+1}/{len(self.clients)}, model {self.model} is available")
+                        return True
+                    else:
+                        self.logger.warning(f"OpenAI API connected with key {i+1}/{len(self.clients)} but model {self.model} not found")
+            except Exception as e:
+                self.logger.warning(f"OpenAI API connection failed with key {i+1}/{len(self.clients)}: {e}")
+                continue
+        
+        self.logger.error("All OpenAI API keys failed connection test")
+        return False
     
     def summarize_chat_logs(self, chat_logs: List[Dict], group_name: str) -> str:
         """使用OpenAI总结聊天记录"""
@@ -191,23 +202,27 @@ class OpenAISummarizer(BaseSummarizer):
         # 构建提示词
         prompt = self._build_prompt(group_name, formatted_messages)
         
-        try:
-            # 使用代理上下文管理器
-            with self.proxy_manager.proxy_context():
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {"role": "system", "content": "你是一个专业的聊天记录分析师，善于从群聊记录中提取关键信息并生成简洁有用的总结。"},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.3
-                )
-            
-            # 获取AI生成的总结
-            ai_summary = response.choices[0].message.content.strip()
-            
-            # 添加折叠的完整聊天记录
-            collapsible_section = f"""
+        # 尝试所有API key
+        last_error = None
+        for attempt in range(len(self.clients)):
+            client = self._get_next_client()
+            try:
+                # 使用代理上下文管理器
+                with self.proxy_manager.proxy_context():
+                    response = client.chat.completions.create(
+                        model=self.model,
+                        messages=[
+                            {"role": "system", "content": "你是一个专业的聊天记录分析师，善于从群聊记录中提取关键信息并生成简洁有用的总结。"},
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=0
+                    )
+                
+                # 获取AI生成的总结
+                ai_summary = response.choices[0].message.content.strip()
+                
+                # 添加折叠的完整聊天记录
+                collapsible_section = f"""
 
 <details>
 <summary>📋 完整聊天记录</summary>
@@ -217,12 +232,18 @@ class OpenAISummarizer(BaseSummarizer):
 ```
 
 </details>"""
-            
-            return ai_summary + collapsible_section
-            
-        except Exception as e:
-            self.logger.error(f"OpenAI API error: {e}")
-            raise RuntimeError(f"OpenAI API调用失败: {str(e)}")
+                
+                self.logger.info(f"OpenAI API call successful with key {attempt + 1}/{len(self.clients)}")
+                return ai_summary + collapsible_section
+                
+            except Exception as e:
+                last_error = e
+                self.logger.warning(f"OpenAI API call failed with key {attempt + 1}/{len(self.clients)}: {e}")
+                continue
+        
+        # 所有key都失败了
+        self.logger.error(f"All OpenAI API keys failed: {last_error}")
+        raise RuntimeError(f"OpenAI API调用失败，所有{len(self.clients)}个API key都无法使用: {str(last_error)}")
     
 
 
@@ -297,34 +318,51 @@ class LocalSummarizer(BaseSummarizer):
 class GeminiSummarizer(BaseSummarizer):
     """Google Gemini总结器"""
     
-    def __init__(self, api_key: str, model: str = "gemini-1.5-flash", proxy_manager: ProxyManager = None):
+    def __init__(self, api_keys: List[str], model: str = "gemini-2.0-flash", proxy_manager: ProxyManager = None):
         super().__init__()
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(model)
+        self.api_keys = api_keys if isinstance(api_keys, list) else [api_keys]
+        self.current_key_index = 0
         self.model_name = model
         self.proxy_manager = proxy_manager or ProxyManager()
+        
+        # 为每个API key创建模型实例
+        self.models = []
+        for key in self.api_keys:
+            genai.configure(api_key=key)
+            self.models.append(genai.GenerativeModel(model))
+    
+    def _get_next_model(self):
+        """获取下一个可用的模型"""
+        model = self.models[self.current_key_index]
+        key = self.api_keys[self.current_key_index]
+        self.current_key_index = (self.current_key_index + 1) % len(self.models)
+        return model, key
     
     def test_connection(self) -> bool:
         """测试Gemini API连接"""
-        try:
-            with self.proxy_manager.proxy_context():
-                # 使用list_models API来测试连接
-                available_models = []
-                for model in genai.list_models():
-                    if 'generateContent' in model.supported_generation_methods:
-                        available_models.append(model.name)
-                
-                # 检查指定的模型是否可用
-                model_full_name = f"models/{self.model_name}"
-                if model_full_name in available_models:
-                    self.logger.info(f"Gemini API connection successful, model {self.model_name} is available")
-                    return True
-                else:
-                    self.logger.warning(f"Gemini API connected but model {self.model_name} not found in available models")
-                    return False
-        except Exception as e:
-            self.logger.error(f"Gemini API connection failed: {e}")
-            return False
+        for i, key in enumerate(self.api_keys):
+            try:
+                genai.configure(api_key=key)
+                with self.proxy_manager.proxy_context():
+                    # 使用list_models API来测试连接
+                    available_models = []
+                    for model in genai.list_models():
+                        if 'generateContent' in model.supported_generation_methods:
+                            available_models.append(model.name)
+                    
+                    # 检查指定的模型是否可用
+                    model_full_name = f"models/{self.model_name}"
+                    if model_full_name in available_models:
+                        self.logger.info(f"Gemini API connection successful with key {i+1}/{len(self.api_keys)}, model {self.model_name} is available")
+                        return True
+                    else:
+                        self.logger.warning(f"Gemini API connected with key {i+1}/{len(self.api_keys)} but model {self.model_name} not found")
+            except Exception as e:
+                self.logger.warning(f"Gemini API connection failed with key {i+1}/{len(self.api_keys)}: {e}")
+                continue
+        
+        self.logger.error("All Gemini API keys failed connection test")
+        return False
     
     def summarize_chat_logs(self, chat_logs: List[Dict], group_name: str) -> str:
         """使用Google Gemini总结聊天记录"""
@@ -337,21 +375,28 @@ class GeminiSummarizer(BaseSummarizer):
         # 构建提示词
         prompt = self._build_prompt(group_name, formatted_messages)
         
-        try:
-            # 使用代理上下文管理器
-            with self.proxy_manager.proxy_context():
-                response = self.model.generate_content(
-                    prompt,
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=0.3
+        # 尝试所有API key
+        last_error = None
+        for attempt in range(len(self.models)):
+            model, key = self._get_next_model()
+            try:
+                # 配置当前API key
+                genai.configure(api_key=key)
+                
+                # 使用代理上下文管理器
+                with self.proxy_manager.proxy_context():
+                    response = model.generate_content(
+                        prompt,
+                        generation_config=genai.types.GenerationConfig(
+                            temperature=0
+                        )
                     )
-                )
-            
-            # 获取AI生成的总结
-            ai_summary = response.text.strip()
-            
-            # 添加折叠的完整聊天记录
-            collapsible_section = f"""
+                
+                # 获取AI生成的总结
+                ai_summary = response.text.strip()
+                
+                # 添加折叠的完整聊天记录
+                collapsible_section = f"""
 
 <details>
 <summary>📋 完整聊天记录</summary>
@@ -361,13 +406,18 @@ class GeminiSummarizer(BaseSummarizer):
 ```
 
 </details>"""
-            
-            return ai_summary + collapsible_section
-            
-        except Exception as e:
-            self.logger.error(f"Gemini API error: {e}")
-            self.logger.exception(e)
-            raise RuntimeError(f"Gemini API调用失败: {str(e)}")
+                
+                self.logger.info(f"Gemini API call successful with key {attempt + 1}/{len(self.models)}")
+                return ai_summary + collapsible_section
+                
+            except Exception as e:
+                last_error = e
+                self.logger.warning(f"Gemini API call failed with key {attempt + 1}/{len(self.models)}: {e}")
+                continue
+        
+        # 所有key都失败了
+        self.logger.error(f"All Gemini API keys failed: {last_error}")
+        raise RuntimeError(f"Gemini API调用失败，所有{len(self.models)}个API key都无法使用: {str(last_error)}")
     
 
 
@@ -381,18 +431,34 @@ class SummarizerFactory:
         proxy_manager = kwargs.get('proxy_manager')
         
         if service_type.lower() == "openai":
-            api_key = kwargs.get('api_key') or os.getenv('OPENAI_API_KEY')
-            if not api_key:
-                raise ValueError("OpenAI API key is required")
+            # 支持新的多key格式和旧的单key格式
+            api_keys = kwargs.get('api_keys')
+            if not api_keys:
+                # 兼容旧格式
+                api_key = kwargs.get('api_key') or os.getenv('OPENAI_API_KEY')
+                if not api_key:
+                    raise ValueError("OpenAI API key is required")
+                api_keys = [api_key]
+            
+            if not api_keys:
+                raise ValueError("OpenAI API keys are required")
             model = kwargs.get('model', 'gpt-4o-mini')
-            return OpenAISummarizer(api_key=api_key, model=model, proxy_manager=proxy_manager)
+            return OpenAISummarizer(api_keys=api_keys, model=model, proxy_manager=proxy_manager)
         
         elif service_type.lower() == "gemini":
-            api_key = kwargs.get('api_key') or os.getenv('GEMINI_API_KEY')
-            if not api_key:
-                raise ValueError("Gemini API key is required")
-            model = kwargs.get('model', 'gemini-1.5-flash')
-            return GeminiSummarizer(api_key=api_key, model=model, proxy_manager=proxy_manager)
+            # 支持新的多key格式和旧的单key格式
+            api_keys = kwargs.get('api_keys')
+            if not api_keys:
+                # 兼容旧格式
+                api_key = kwargs.get('api_key') or os.getenv('GEMINI_API_KEY')
+                if not api_key:
+                    raise ValueError("Gemini API key is required")
+                api_keys = [api_key]
+            
+            if not api_keys:
+                raise ValueError("Gemini API keys are required")
+            model = kwargs.get('model', 'gemini-2.0-flash')
+            return GeminiSummarizer(api_keys=api_keys, model=model, proxy_manager=proxy_manager)
         
         elif service_type.lower() == "local":
             return LocalSummarizer()

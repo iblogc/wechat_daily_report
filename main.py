@@ -40,20 +40,20 @@ class WeChatDailyReporter:
         })
         
         # 准备AI服务配置
-        api_key = None
+        api_keys = None
         model = None
         
         if self.config['ai_service'] == 'openai':
-            api_key = self.config['openai_api_key']
+            api_keys = self.config['openai_api_keys']
             model = self.config['openai_model']
-            if not api_key:
+            if not api_keys:
                 raise ValueError("OpenAI API key is not configured")
             if not model:
                 raise ValueError("OpenAI model is not configured")
         elif self.config['ai_service'] == 'gemini':
-            api_key = self.config['gemini_api_key']
+            api_keys = self.config['gemini_api_keys']
             model = self.config['gemini_model']
-            if not api_key:
+            if not api_keys:
                 raise ValueError("Gemini API key is not configured")
             if not model:
                 raise ValueError("Gemini model is not configured")
@@ -65,7 +65,7 @@ class WeChatDailyReporter:
         
         self.summarizer = SummarizerFactory.create_summarizer(
             service_type=self.config['ai_service'],
-            api_key=api_key,
+            api_keys=api_keys,
             model=model,
             proxy_manager=self.proxy_manager
         )
@@ -101,9 +101,9 @@ class WeChatDailyReporter:
             'api_timeout': int(os.getenv('WECHAT_API_TIMEOUT', '30')),
             'target_groups': [g.strip() for g in os.getenv('TARGET_GROUPS', '').split(',') if g.strip()],
             'ai_service': os.getenv('AI_SERVICE', 'local'),
-            'openai_api_key': os.getenv('OPENAI_API_KEY'),
+            'openai_api_keys': [k.strip() for k in os.getenv('OPENAI_API_KEY', '').split(',') if k.strip()],
             'openai_model': os.getenv('OPENAI_MODEL'),
-            'gemini_api_key': os.getenv('GEMINI_API_KEY'),
+            'gemini_api_keys': [k.strip() for k in os.getenv('GEMINI_API_KEY', '').split(',') if k.strip()],
             'gemini_model': os.getenv('GEMINI_MODEL'),
             'max_messages_per_group': int(os.getenv('MAX_MESSAGES_PER_GROUP', '200')),
             'notification_email': os.getenv('NOTIFICATION_EMAIL'),
@@ -127,18 +127,26 @@ class WeChatDailyReporter:
         if not self.config['target_groups']:
             raise ValueError("TARGET_GROUPS must be configured")
     
-    def run_daily_report(self, report_date: str = None) -> str:
+    def run_daily_report(self, report_date: str = None, skip_existing: bool = False) -> str:
         """
         运行每日报告生成
         
         Args:
             report_date: 报告日期，格式 YYYY-MM-DD，默认为昨天
+            skip_existing: 是否跳过已存在的报告文件
             
         Returns:
             str: 生成的报告文件路径
         """
         if not report_date:
             report_date = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        # 检查报告文件是否已存在
+        if skip_existing:
+            report_file_path = os.path.join('reports', f'wechat_daily_report_{report_date}.md')
+            if os.path.exists(report_file_path):
+                self.logger.info(f"Report for {report_date} already exists, skipping: {report_file_path}")
+                return report_file_path
         
         self.logger.info(f"Starting daily report generation for {report_date}")
         
@@ -202,10 +210,18 @@ class WeChatDailyReporter:
         report_content = self.report_generator.generate_daily_report(summaries, report_date)
         report_file = self.report_generator.save_report(report_content, report_date)
         
+        # 生成各群聊的单独报告
+        group_report_files = self.report_generator.save_group_reports(summaries, report_date)
+        
         # 发送通知
         self._send_notifications(report_content, report_date, summaries)
         
         self.logger.info(f"Daily report completed: {report_file}")
+        if group_report_files:
+            self.logger.info(f"Generated {len(group_report_files)} group reports")
+            for group_file in group_report_files:
+                self.logger.info(f"  - {group_file}")
+        
         return report_file
     
     def _send_notifications(self, report_content: str, report_date: str, 
@@ -235,12 +251,45 @@ class WeChatDailyReporter:
             self.logger.error(f"Error sending notifications: {e}")
 
 
+def parse_date_range(date_str: str) -> List[str]:
+    """
+    解析日期或日期范围
+    
+    Args:
+        date_str: 日期字符串，支持单个日期 "2025-01-01" 或日期范围 "2025-01-01:2025-01-03"
+        
+    Returns:
+        List[str]: 日期列表
+    """
+    if ':' in date_str:
+        # 日期范围
+        start_date_str, end_date_str = date_str.split(':', 1)
+        start_date = datetime.strptime(start_date_str.strip(), '%Y-%m-%d')
+        end_date = datetime.strptime(end_date_str.strip(), '%Y-%m-%d')
+        
+        if start_date > end_date:
+            raise ValueError("Start date must be before or equal to end date")
+        
+        dates = []
+        current_date = start_date
+        while current_date <= end_date:
+            dates.append(current_date.strftime('%Y-%m-%d'))
+            current_date += timedelta(days=1)
+        
+        return dates
+    else:
+        # 单个日期
+        # 验证日期格式
+        datetime.strptime(date_str.strip(), '%Y-%m-%d')
+        return [date_str.strip()]
+
+
 def main():
     """主入口函数"""
     import argparse
     
     parser = argparse.ArgumentParser(description='WeChat Daily Report Generator')
-    parser.add_argument('--date', type=str, help='Report date (YYYY-MM-DD), default: yesterday')
+    parser.add_argument('--date', type=str, help='Report date (YYYY-MM-DD) or date range (YYYY-MM-DD:YYYY-MM-DD), default: yesterday')
     parser.add_argument('--config', type=str, default='.env.prod', help='Config file path')
     parser.add_argument('--test', action='store_true', help='Test API connection')
     
@@ -304,8 +353,46 @@ def main():
             print("\n🎉 All tests completed!")
         else:
             # 生成报告
-            report_file = reporter.run_daily_report(args.date)
-            print(f"✅ Report generated: {report_file}")
+            if args.date:
+                # 解析日期或日期范围
+                try:
+                    dates = parse_date_range(args.date)
+                except ValueError as e:
+                    print(f"❌ Invalid date format: {e}")
+                    return 1
+                
+                if len(dates) == 1:
+                    # 单个日期，原有逻辑：不管报告在不在都生成覆盖
+                    report_file = reporter.run_daily_report(dates[0], skip_existing=False)
+                    print(f"✅ Report generated: {report_file}")
+                else:
+                    # 日期范围，检查已存在的报告并跳过
+                    print(f"📅 Generating reports for date range: {dates[0]} to {dates[-1]} ({len(dates)} days)")
+                    generated_count = 0
+                    skipped_count = 0
+                    
+                    for date in dates:
+                        try:
+                            # 检查主报告文件是否已存在
+                            report_file_path = os.path.join('reports', f'wechat_daily_report_{date}.md')
+                            if os.path.exists(report_file_path):
+                                skipped_count += 1
+                                print(f"⏭️  Skipped {date} (already exists): {report_file_path}")
+                                continue
+                            
+                            # 生成新报告（包括主报告和群聊报告）
+                            report_file = reporter.run_daily_report(date, skip_existing=True)
+                            generated_count += 1
+                            print(f"✅ Generated {date}: {report_file}")
+                            
+                        except Exception as e:
+                            print(f"❌ Failed to generate report for {date}: {e}")
+                    
+                    print(f"\n📊 Summary: {generated_count} generated, {skipped_count} skipped")
+            else:
+                # 默认生成昨天的报告
+                report_file = reporter.run_daily_report()
+                print(f"✅ Report generated: {report_file}")
         
         return 0
         

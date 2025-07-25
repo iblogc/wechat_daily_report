@@ -73,6 +73,114 @@ class ReportGenerator:
             self.logger.error(f"Failed to save report: {e}")
             raise
     
+    def save_group_reports(self, summaries: List[Dict], report_date: str = None, 
+                          output_dir: str = None) -> List[str]:
+        """
+        保存各群聊的单独报告
+        文件结构: reports/groups/群聊名称/日期.md
+        
+        Args:
+            summaries: 各群聊总结列表
+            report_date: 报告日期
+            output_dir: 输出目录
+            
+        Returns:
+            List[str]: 保存的文件路径列表
+        """
+        if not report_date:
+            report_date = datetime.now().strftime('%Y-%m-%d')
+        
+        if not output_dir:
+            output_dir = os.path.join(os.path.dirname(__file__), '..', 'reports', 'groups')
+        
+        saved_files = []
+        
+        for summary in summaries:
+            group_name = summary.get('group_name', '未知群聊')
+            group_summary = summary.get('summary', '')
+            
+            if not group_summary.strip():
+                continue
+            
+            # 生成安全的群聊文件夹名
+            safe_group_name = self._sanitize_filename(group_name)
+            
+            # 创建群聊专属文件夹: groups/群聊名称/
+            group_dir = os.path.join(output_dir, safe_group_name)
+            os.makedirs(group_dir, exist_ok=True)
+            
+            # 报告文件名为日期.md
+            filename = f"{report_date}.md"
+            filepath = os.path.join(group_dir, filename)
+            
+            try:
+                # 为单个群聊生成报告内容
+                group_report_content = self._generate_group_report_content(
+                    group_name, group_summary, report_date, summary.get('message_count', 0)
+                )
+                
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    f.write(group_report_content)
+                
+                saved_files.append(filepath)
+                self.logger.info(f"Group report saved to: {filepath}")
+                
+            except Exception as e:
+                self.logger.error(f"Failed to save group report for {group_name}: {e}")
+                continue
+        
+        return saved_files
+    
+    def _sanitize_filename(self, filename: str) -> str:
+        """
+        清理文件名，移除不安全的字符
+        
+        Args:
+            filename: 原始文件名
+            
+        Returns:
+            str: 清理后的文件名
+        """
+        import re
+        # 移除或替换不安全的字符
+        safe_name = re.sub(r'[<>:"/\\|?*]', '_', filename)
+        # 移除多余的空格和点
+        safe_name = re.sub(r'\s+', '_', safe_name.strip())
+        safe_name = safe_name.strip('.')
+        # 限制长度
+        if len(safe_name) > 50:
+            safe_name = safe_name[:50]
+        return safe_name or 'unknown_group'
+    
+    def _generate_group_report_content(self, group_name: str, summary: str, 
+                                     report_date: str, message_count: int) -> str:
+        """
+        生成单个群聊的报告内容
+        
+        Args:
+            group_name: 群聊名称
+            summary: 群聊总结
+            report_date: 报告日期
+            message_count: 消息数量
+            
+        Returns:
+            str: 群聊报告内容
+        """
+        return f"""# {group_name} - 每日报告
+
+**报告日期**: {report_date}  
+**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  
+**消息数量**: {message_count}
+
+---
+
+{summary}
+
+---
+
+*本报告由微信聊天记录自动分析系统生成*
+"""
+    
     def _get_template_content(self) -> str:
         """获取报告模板内容"""
         template_path = os.path.join(self.template_dir, 'daily_report.md')
